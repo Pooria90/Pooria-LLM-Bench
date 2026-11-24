@@ -1,0 +1,123 @@
+# Model registry for pooria-bench.
+#
+# Each entry becomes one Railtracks LLM (`rt.llm.*`). Tasks never name a model;
+# the runner builds every task once per entry here.
+#
+#   provider     openai | anthropic | gemini | openai_compatible | echo
+#   model_id     the provider's API model string
+#   api_base     required for openai_compatible
+#   api_key_env  env var holding the key (loaded from .env)
+#   params       hyperparameters passed to the rt.llm constructor (max_tokens,
+#                reasoning_effort, temperature, ...). Passed through as-is.
+#   pricing      USD per 1M tokens. Used for cost, because litellm does not know
+#                every model (Radium is missing). Omit to fall back to litellm.
+#   rate_group   models sharing a rate limit (Radium limits per organization).
+#   rpm          client-side requests/minute cap for the whole rate_group.
+#   retry        {max_tries, base}: Railtracks ExponentialRetry, delay ~ base**attempt.
+#
+# Prices verified 2026-11-24: Radium from radium.cloud/pricing, Claude from
+# Anthropic's published rates. OpenAI / Gemini / xAI pricing is left to litellm
+# until we confirm it (see notes/).
+
+defaults:
+  params:
+    max_tokens: 4096
+  retry:              # jittered: waits ~U(0, 3**attempt) s -> up to 1, 3, 9, 27, 81 s
+    max_tries: 6
+    base: 3.0
+
+models:
+  # ---------------------------------------------------------------- Radium
+  radium/hal:
+    provider: openai_compatible
+    model_id: hal-1.0
+    api_base: https://api.radium.cloud/v1
+    api_key_env: RADIUM_API_KEY
+    rate_group: radium
+    rpm: 600            # org limit is 1,000 RPM with a 3x acceleration cap; stay well under
+    pricing: {input: 2.00, output: 10.00, cached_input: 0.20}
+    tags: [radium, frontier]
+  radium/clarke:
+    provider: openai_compatible
+    model_id: clarke-1.0
+    api_base: https://api.radium.cloud/v1
+    api_key_env: RADIUM_API_KEY
+    rate_group: radium
+    rpm: 600
+    pricing: {input: 0.75, output: 4.50, cached_input: 0.075}
+    tags: [radium, mid]
+  radium/tycho:
+    provider: openai_compatible
+    model_id: tycho-1.0
+    api_base: https://api.radium.cloud/v1
+    api_key_env: RADIUM_API_KEY
+    rate_group: radium
+    rpm: 600
+    pricing: {input: 0.10, output: 1.50, cached_input: 0.02}
+    tags: [radium, small]
+
+  # ------------------------------------------------- Claude (Radium's named comparables)
+  anthropic/opus-4.7:
+    provider: anthropic
+    model_id: claude-opus-4-7
+    pricing: {input: 5.00, output: 25.00, cached_input: 0.50}
+    tags: [anthropic, frontier, radium-comparable]
+  anthropic/sonnet-4.6:
+    provider: anthropic
+    model_id: claude-sonnet-4-6
+    pricing: {input: 3.00, output: 15.00, cached_input: 0.30}
+    tags: [anthropic, mid, radium-comparable]
+  anthropic/haiku-4.5:
+    provider: anthropic
+    model_id: claude-haiku-4-5
+    pricing: {input: 1.00, output: 5.00, cached_input: 0.10}
+    tags: [anthropic, small, radium-comparable]
+
+  # ------------------------------------------------------------ Claude (current)
+  anthropic/opus-5.5:
+    provider: anthropic
+    model_id: claude-opus-5-5
+    pricing: {input: 4.00, output: 20.00, cached_input: 0.20}
+    tags: [anthropic, frontier]
+  anthropic/sonnet-5.5:
+    provider: anthropic
+    model_id: claude-sonnet-5-5
+    pricing: {input: 2.00, output: 10.00, cached_input: 0.10}
+    tags: [anthropic, mid]
+  anthropic/haiku-5.5:
+    provider: anthropic
+    model_id: claude-haiku-5-5
+    pricing: {input: 0.10, output: 0.50, cached_input: 0.01}
+    tags: [anthropic, small]
+
+  # ---------------------------------------------- OpenAI (Radium's named comparables)
+  openai/gpt-5.5:
+    provider: openai
+    model_id: gpt-5.5
+    tags: [openai, frontier, radium-comparable]
+  openai/gpt-5.4:
+    provider: openai
+    model_id: gpt-5.4
+    tags: [openai, mid, radium-comparable]
+  openai/gpt-5.4-mini:
+    provider: openai
+    model_id: gpt-5.4-mini
+    tags: [openai, small, radium-comparable]
+
+  # ------------------------------------------------------------- Others
+  gemini/3.8-flash:
+    provider: gemini
+    model_id: gemini-3.8-flash
+    tags: [gemini, mid]
+  xai/grok-4.7:
+    provider: openai_compatible
+    model_id: grok-4.7
+    api_base: https://api.x.ai/v1
+    api_key_env: XAI_API_KEY
+    tags: [xai, frontier]
+
+  # -------------------------------------------------------------- Offline
+  echo:
+    provider: echo
+    model_id: echo
+    tags: [offline]

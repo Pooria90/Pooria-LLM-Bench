@@ -1,2 +1,5 @@
-def main() -> None:
-    print("Hello from pooria-bench!")
+"""pooria-bench: an LLM benchmark harness built on Railtracks."""
+
+from .cli import main
+
+__all__ = ["main"]

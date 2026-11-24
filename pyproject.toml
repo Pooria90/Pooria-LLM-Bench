@@ -1,13 +1,20 @@
 [project]
 name = "pooria-bench"
 version = "0.1.0"
-description = "Add your description here"
+description = "LLM benchmark harness built on Railtracks"
 readme = "README.md"
 authors = [
     { name = "Pooria Ashrafian", email = "pooria@railtown.ai" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pydantic>=2.14.4",
+    "python-dotenv>=1.2.4",
+    "pyyaml>=6.0.4",
+    "railtracks==1.8.1",
+    "rich>=15.0.0",
+    "typer>=0.29.2",
+]
 
 [project.scripts]
 pooria-bench = "pooria_bench:main"
@@ -15,3 +22,12 @@ pooria-bench = "pooria_bench:main"
 [build-system]
 requires = ["uv_build>=0.13.4,<0.14.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::UserWarning:railtracks.*"]

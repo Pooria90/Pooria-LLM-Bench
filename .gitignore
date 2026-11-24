@@ -12,3 +12,8 @@ wheels/
 # Environment variables
 *.env*
 !.env.example
+
+# Benchmark outputs and Railtracks session data
+runs/
+.railtracks/
+.pytest_cache/
