@@ -89,7 +89,9 @@ def aggregate(results: list[SampleResult], by_category: bool = False) -> list[Ro
                 n=n,
                 errors=sum(1 for r in rs if r.error),
                 correct=correct,
-                format_misses=sum(1 for r in scored if _format_ok(r) is False),
+                format_misses=sum(
+                    1 for r in scored if _format_ok(r) is False and not r.score_details.get("empty_output")
+                ),
                 no_reasoning=sum(1 for r in scored if r.reasoning_tokens == 0),
                 accuracy=correct / n if n else None,
                 ci_low=lo,

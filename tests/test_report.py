@@ -47,5 +47,7 @@ def test_aggregate_counts_refusals_and_format_misses():
     r2 = _r("a", "2", True)
     r1.score_details = {"format_ok": False}
     r2.score_details = {"answer_line": False}  # legacy key still understood
-    (row,) = aggregate([r1, r2])
-    assert row.refusals == 1 and row.format_misses == 2
+    r3 = _r("a", "3", False, finish="length")
+    r3.score_details = {"format_ok": False, "empty_output": "length"}  # out of budget, not a format miss
+    (row,) = aggregate([r1, r2, r3])
+    assert row.refusals == 1 and row.format_misses == 2 and row.truncated == 1

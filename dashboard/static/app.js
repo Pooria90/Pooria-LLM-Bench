@@ -71,7 +71,8 @@ function verdict(r) {
   return { key: "wrong", label: "Wrong", glyph: "✗" };
 }
 const noReasoning = (r) => r && !r.error && r.reasoning_tokens === 0;
-const formatMiss = (r) => r && !r.error && (r.score_details?.format_ok ?? r.score_details?.answer_line) === false;
+const formatMiss = (r) =>
+  r && !r.error && !r.score_details?.empty_output && (r.score_details?.format_ok ?? r.score_details?.answer_line) === false;
 
 function resultsFor(sampleId) {
   const out = [];
