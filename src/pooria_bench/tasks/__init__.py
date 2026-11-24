@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from .aime2025 import AIME2025
+from .aime import AIME2025, AIME2026
 from .base import BuildContext, Sample, Score, Task
 from .smoke_qa import SmokeQA
 from .smoke_tools import SmokeTools
 
-TASKS: dict[str, type[Task]] = {t.name: t for t in (SmokeQA, SmokeTools, AIME2025)}
+TASKS: dict[str, type[Task]] = {t.name: t for t in (SmokeQA, SmokeTools, AIME2025, AIME2026)}
 
 
 def get_task(name: str) -> Task:

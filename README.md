@@ -21,27 +21,27 @@ uv run python dashboard/serve.py               # browse results at http://127.0.
 uv run pytest
 ```
 
-## AIME 2025
+## AIME (2025, 2026)
 
 ```bash
-uv run pooria-bench run aime2025 -m tag:aime-set --timeout 1800 -c 5
+uv run pooria-bench run aime2026 -m tag:aime64 --timeout 3600 -c 5   # 64k budget: Hal, GPT-5.5, Opus 4.7
+uv run pooria-bench run aime2025 -m tag:aime-set --timeout 1800 -c 5 # 32k budget: Hal, GPT-5.5, Opus 4.6
 ```
 
-- **Problems:** all 30 AIME 2025 problems (`data/aime2025.jsonl`, see `data/README.md`). The six
-  figures are given as TikZ, Asymptote or LaTeX text, and those problems are tagged
-  `category=figure` (`report --by-category` splits them out).
-- **Models (`aime-set`):**
-  - Radium Hal (`radium/hal-32k`)
-  - GPT-5.5 at `reasoning_effort=high` (`openai/gpt-5.5-high`)
-  - Claude Opus 4.6 at `reasoning_effort=high` (`anthropic/opus-4.6-high`)
-- **Output budget:** 32,768 tokens for all three, Hal's documented maximum.
+- **Problems:** all 30 problems per year (`data/aime<year>.jsonl`; see `data/README.md`). Figures are
+  given as text (TikZ, Asymptote, a LaTeX array or an ASCII grid) and tagged `category=figure`
+  (`report --by-category` splits them out).
+- **Model sets:** each is Radium Hal against GPT-5.5 and a Claude Opus model, all at
+  `reasoning_effort=high` where available.
+  - `aime64`: 65,536-token output budget, with Opus 4.7.
+  - `aime-set`: 32,768 tokens (Hal's documented maximum), with Opus 4.6.
 - **Prompt:** MathArena's: the problem, then "reason step by step… `\boxed{}`… an integer between 0
   and 999", with no system prompt.
 - **Scoring:** the last `\boxed{}` integer. A reply that is only an integer is accepted but flagged as
   a format miss.
 - **Running out of budget** counts as wrong (column `trunc`, ✂ in the dashboard).
-- **Memorization check:** `no-think` counts answers produced with zero reasoning tokens. Opus 4.7 was
-  dropped from the set because it answered hard problems instantly with no reasoning.
+- **Memorization check:** `no-think` counts answers produced with zero reasoning tokens. On AIME
+  2025, Opus 4.7 answered hard problems instantly with no reasoning, so the 2025 set uses Opus 4.6.
 
 `-m` takes model names from `configs/models.yaml` or `tag:<tag>`. Useful `run` flags:
 `--limit N`, `--repeats R`, `--concurrency C` (per model), `--timeout S` (per sample),

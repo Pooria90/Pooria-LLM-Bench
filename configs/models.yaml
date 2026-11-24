@@ -165,6 +165,34 @@ models:
     pricing: {input: 5.00, output: 25.00, cached_input: 0.50}
     tags: [anthropic]
 
+  # ------------------------------------- Reasoning benchmarks, 64k budget (AIME 2026)
+  # Same models and settings, with a 65,536-token output budget (tag: aime64). Radium
+  # accepts max_tokens up to 65,536 even though its docs list 32,768 as Hal's maximum;
+  # a Hal call cut off at exactly 32,768 would mean it is silently capped.
+  radium/hal-64k:
+    provider: openai_compatible
+    model_id: hal-1.0
+    api_base: https://api.radium.cloud/v1
+    api_key_env: RADIUM_API_KEY
+    rate_group: radium
+    rpm: 600
+    params: {max_tokens: 65536}
+    pricing: {input: 2.00, output: 10.00, cached_input: 0.20}
+    tags: [aime64, radium]
+  openai/gpt-5.5-high-64k:
+    provider: openai
+    model_id: gpt-5.5
+    params: {max_tokens: 65536, reasoning_effort: high}
+    tags: [aime64, openai]
+  anthropic/opus-4.7-high-64k:
+    provider: anthropic
+    model_id: claude-opus-4-7
+    rate_group: anthropic
+    max_concurrent: 2
+    params: {max_tokens: 65536, reasoning_effort: high}
+    pricing: {input: 5.00, output: 25.00, cached_input: 0.50}
+    tags: [aime64, anthropic]
+
   # -------------------------------------------------------------- Offline
   echo:
     provider: echo

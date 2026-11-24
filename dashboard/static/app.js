@@ -143,7 +143,9 @@ function renderRich(el, text) {
   }
 }
 
-const FIGURE_RE = /\\begin\{(tikzpicture|asy)\}[\s\S]*?\\end\{\1\}/g;
+// Figures given to the model as text: LaTeX environments, BBCode-style [asy], or an ASCII grid
+// (3+ consecutive lines that start and end with "|").
+const FIGURE_RE = /\\begin\{(tikzpicture|asy)\}[\s\S]*?\\end\{\1\}|\[asy\][\s\S]*?\[\/asy\]|(?:^\|.*\|[ \t]*(?:\n|$)){3,}/gm;
 function renderProblem(el, text) {
   el.innerHTML = "";
   let last = 0;
@@ -155,11 +157,19 @@ function renderProblem(el, text) {
   };
   for (const m of String(text).matchAll(FIGURE_RE)) {
     appendRich(text.slice(last, m.index));
-    const kind = m[1] === "asy" ? "Asymptote" : "TikZ";
-    const d = document.createElement("details");
-    d.className = "figure";
-    d.innerHTML = `<summary>Figure: given to the model as ${kind} source (show)</summary><pre><code>${esc(m[0])}</code></pre>`;
-    el.appendChild(d);
+    if (m[0].startsWith("|")) {
+      // ASCII diagram: it *is* the figure, so show it as-is (Markdown would collapse it).
+      const d = document.createElement("div");
+      d.className = "figure";
+      d.innerHTML = `<p class="muted">Diagram, given to the model as this ASCII grid:</p><pre><code>${esc(m[0].replace(/\n$/, ""))}</code></pre>`;
+      el.appendChild(d);
+    } else {
+      const kind = m[1] === "tikzpicture" ? "TikZ" : "Asymptote";
+      const d = document.createElement("details");
+      d.className = "figure";
+      d.innerHTML = `<summary>Figure: given to the model as ${kind} source (show)</summary><pre><code>${esc(m[0])}</code></pre>`;
+      el.appendChild(d);
+    }
     last = m.index + m[0].length;
   }
   appendRich(text.slice(last));
