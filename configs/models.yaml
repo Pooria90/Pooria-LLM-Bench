@@ -14,7 +14,7 @@
 #   rate_group     models sharing a rate limit (Radium limits per organization).
 #   rpm            client-side requests/minute cap for the whole rate_group.
 #   max_concurrent in-flight model calls for the whole rate_group (Anthropic rejects
-#                  this account above ~4 concurrent connections).
+#                  this account at 3+ concurrent long requests).
 #   retry        {max_tries, base}: Railtracks ExponentialRetry, delay ~ base**attempt.
 #
 # Prices verified 2026-11-24: Radium from radium.cloud/pricing, Claude from
@@ -62,21 +62,21 @@ models:
   anthropic/opus-4.7:
     provider: anthropic
     rate_group: anthropic
-    max_concurrent: 3
+    max_concurrent: 2
     model_id: claude-opus-4-7
     pricing: {input: 5.00, output: 25.00, cached_input: 0.50}
     tags: [anthropic, frontier, radium-comparable]
   anthropic/sonnet-4.6:
     provider: anthropic
     rate_group: anthropic
-    max_concurrent: 3
+    max_concurrent: 2
     model_id: claude-sonnet-4-6
     pricing: {input: 3.00, output: 15.00, cached_input: 0.30}
     tags: [anthropic, mid, radium-comparable]
   anthropic/haiku-4.5:
     provider: anthropic
     rate_group: anthropic
-    max_concurrent: 3
+    max_concurrent: 2
     model_id: claude-haiku-4-5
     pricing: {input: 1.00, output: 5.00, cached_input: 0.10}
     tags: [anthropic, small, radium-comparable]
@@ -85,21 +85,21 @@ models:
   anthropic/opus-5.5:
     provider: anthropic
     rate_group: anthropic
-    max_concurrent: 3
+    max_concurrent: 2
     model_id: claude-opus-5-5
     pricing: {input: 4.00, output: 20.00, cached_input: 0.20}
     tags: [anthropic, frontier]
   anthropic/sonnet-5.5:
     provider: anthropic
     rate_group: anthropic
-    max_concurrent: 3
+    max_concurrent: 2
     model_id: claude-sonnet-5-5
     pricing: {input: 2.00, output: 10.00, cached_input: 0.10}
     tags: [anthropic, mid]
   anthropic/haiku-5.5:
     provider: anthropic
     rate_group: anthropic
-    max_concurrent: 3
+    max_concurrent: 2
     model_id: claude-haiku-5-5
     pricing: {input: 0.10, output: 0.50, cached_input: 0.01}
     tags: [anthropic, small]
@@ -149,7 +149,7 @@ models:
     provider: anthropic
     model_id: claude-opus-4-6
     rate_group: anthropic
-    max_concurrent: 3
+    max_concurrent: 2
     params: {max_tokens: 32768, reasoning_effort: high}
     pricing: {input: 5.00, output: 25.00, cached_input: 0.50}
     tags: [aime-set, anthropic]
@@ -159,7 +159,7 @@ models:
     provider: anthropic
     model_id: claude-opus-4-7
     rate_group: anthropic
-    max_concurrent: 3
+    max_concurrent: 2
     # litellm maps this to thinking={type: adaptive, display: summarized} + effort=high
     params: {max_tokens: 32768, reasoning_effort: high}
     pricing: {input: 5.00, output: 25.00, cached_input: 0.50}
