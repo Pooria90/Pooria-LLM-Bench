@@ -346,6 +346,7 @@ function applyFilters() {
 }
 
 function renderMatrix() {
+  const hasTypes = state.samples.some((s) => (s.metadata?.problem_type || []).length);
   const head = state.models.map((m) => `<th class="num" title="${esc(m)}">${esc(shortName(m))}</th>`).join("");
   const rows = state.filtered.map((id) => {
     const s = state.sampleById.get(id);
@@ -362,10 +363,10 @@ function renderMatrix() {
     const types = (s.metadata?.problem_type || []).join(", ");
     const fig = s.metadata?.figure ? ` <span class="badge" title="figure given as ${esc(s.metadata.figure)}">fig</span>` : "";
     return `<tr data-id="${esc(id)}" class="${id === state.selected ? "selected" : ""}">
-      <td class="id">${esc(id)}${fig}</td><td class="ptype">${esc(types)}</td><td class="num">${esc(s.target)}</td>${cells.join("")}</tr>`;
+      <td class="id">${esc(id)}${fig}</td>${hasTypes ? `<td class="ptype">${esc(types)}</td>` : ""}<td class="num">${esc(s.target)}</td>${cells.join("")}</tr>`;
   });
   $("#matrix").innerHTML = rows.length
-    ? `<table class="matrix"><thead><tr><th>Problem</th><th>Type</th><th class="num">Answer</th>${head}</tr></thead><tbody>${rows.join("")}</tbody></table>`
+    ? `<table class="matrix"><thead><tr><th>Problem</th>${hasTypes ? "<th>Type</th>" : ""}<th class="num">Answer</th>${head}</tr></thead><tbody>${rows.join("")}</tbody></table>`
     : `<p class="muted">No problems match these filters.</p>`;
 }
 
