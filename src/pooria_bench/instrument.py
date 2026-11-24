@@ -9,7 +9,7 @@ Two pieces, both working around gaps in Railtracks' public telemetry (see GAPS.m
 
 2. `recording_middleware` is a Railtracks *model middleware* (`rt.wrap_llm`). It
    wraps every model call inside an agent's tool loop, paces it through the
-   sample's rate limiter, times it with a monotonic clock and appends a
+   sample's rate limiter and concurrency cap, times it with a monotonic clock and appends a
    `CallRecord` to the `SampleTrace` of whichever sample is running. The trace is
    found through a ContextVar, which Railtracks propagates into its node tasks,
    so concurrent samples never mix their records.
@@ -17,6 +17,8 @@ Two pieces, both working around gaps in Railtracks' public telemetry (see GAPS.m
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import time
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -50,6 +52,7 @@ class SampleTrace:
     """Everything recorded while one sample runs."""
 
     limiter: RateLimiter | None = None
+    slots: asyncio.Semaphore | None = None  # caps concurrent calls per rate_group
     calls: list[CallRecord] = field(default_factory=list)
 
 
@@ -106,16 +109,20 @@ async def recording_middleware(llm_call, message_history, schema, tools):
     if trace is None:  # running outside the benchmark runner
         return await llm_call(message_history, schema, tools)
 
-    queued = await trace.limiter.acquire() if trace.limiter is not None else 0.0
-    start = time.perf_counter()
-    try:
-        response = await llm_call(message_history, schema, tools)
-    except Exception as exc:
-        trace.calls.append(
-            CallRecord(latency_s=time.perf_counter() - start, queued_s=queued, error=repr(exc))
-        )
-        raise
-    elapsed = time.perf_counter() - start
+    wait_start = time.perf_counter()
+    async with trace.slots if trace.slots is not None else contextlib.nullcontext():
+        if trace.limiter is not None:
+            await trace.limiter.acquire()
+        queued = time.perf_counter() - wait_start
+        start = time.perf_counter()
+        try:
+            response = await llm_call(message_history, schema, tools)
+        except Exception as exc:
+            trace.calls.append(
+                CallRecord(latency_s=time.perf_counter() - start, queued_s=queued, error=repr(exc))
+            )
+            raise
+        elapsed = time.perf_counter() - start
 
     info = response.message_info
     trace.calls.append(

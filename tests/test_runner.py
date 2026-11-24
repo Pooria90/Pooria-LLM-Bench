@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import threading
+import time
 
 import pytest
 from railtracks.llm.message import ToolMessage
@@ -125,3 +127,70 @@ def test_describe_error_surfaces_root_cause():
     except RuntimeError as exc:
         msg = runner_mod.describe_error(exc)
     assert "RuntimeError" in msg and "root=ValueError: 429 Too Many Requests" in msg
+
+
+def test_samples_file_and_sample_selection(tmp_path, monkeypatch, scripted_spec):
+    _patch_llm(monkeypatch, ScriptedLLM(lambda m, t: r"\boxed{70}"))
+    task = get_task("aime2025")
+    cfg = RunConfig(out_dir=tmp_path, sample_ids=["I-01", "II-03"])
+    run_dir = asyncio.run(run_benchmark(task, [scripted_spec], cfg))
+    saved = [json.loads(line) for line in (run_dir / "samples.jsonl").read_text().splitlines()]
+    assert [s["id"] for s in saved] == ["I-01", "II-03"]
+    assert saved[1]["metadata"]["figure"] == "tikz" and "tikzpicture" in saved[1]["input"]
+    results = {r.sample_id: r for r in latest_results(run_dir / "results.jsonl")}
+    assert results["I-01"].correct and not results["II-03"].correct
+    with pytest.raises(KeyError):
+        runner_mod.select_samples(task, RunConfig(sample_ids=["nope"]))
+    assert {s.id for s in runner_mod.select_samples(task, RunConfig(categories=["figure"]))} == {
+        "I-02", "I-10", "I-11", "II-03", "II-05", "II-06"}
+
+
+class _SlowLLM(ScriptedLLM):
+    """Model that tracks how many calls are in flight at once.
+
+    Railtracks runs the sync `_chat` in a worker thread even for async flows,
+    so the overlap is tracked there, under a thread lock.
+    """
+
+    def __init__(self):
+        super().__init__(lambda m, t: "Answer: 0")
+        self.active = self.peak = 0
+        self._lock = threading.Lock()
+
+    def _chat(self, messages):
+        with self._lock:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+        time.sleep(0.05)
+        with self._lock:
+            self.active -= 1
+        return self._respond(messages)
+
+
+def test_max_concurrent_caps_calls_across_the_rate_group(tmp_path, monkeypatch, scripted_spec):
+    llm = _SlowLLM()
+    _patch_llm(monkeypatch, llm)
+    a = scripted_spec.model_copy(update={"name": "a", "rate_group": "g", "max_concurrent": 2})
+    b = scripted_spec.model_copy(update={"name": "b", "rate_group": "g", "max_concurrent": 2})
+    asyncio.run(run_benchmark(get_task("smoke-qa"), [a, b], RunConfig(out_dir=tmp_path, concurrency=6)))
+    assert llm.peak == 2
+
+
+def test_empty_output_from_budget_exhaustion_is_scored_wrong_not_an_error(tmp_path, monkeypatch, scripted_spec):
+    class TruncatingLLM(ScriptedLLM):
+        def _respond(self, messages, tools=None):
+            resp = super()._respond(messages, tools)
+            resp.message_info.finish_reason = "length"  # what the instrumented models record
+            return resp
+
+    def empty(messages, tools):
+        return None  # litellm/Railtracks give None content when the budget runs out
+
+    _patch_llm(monkeypatch, TruncatingLLM(empty))
+    task = get_task("aime2025")
+    run_dir = asyncio.run(run_benchmark(task, [scripted_spec], RunConfig(out_dir=tmp_path, sample_ids=["I-01"])))
+    (r,) = latest_results(run_dir / "results.jsonl")
+    assert r.error is None, r.error
+    assert r.correct is False
+    assert r.finish_reasons == ["length"]
+    assert r.score_details.get("empty_output") == "length"  # took the model-failure path

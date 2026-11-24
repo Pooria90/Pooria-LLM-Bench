@@ -11,8 +11,10 @@
 #                reasoning_effort, temperature, ...). Passed through as-is.
 #   pricing      USD per 1M tokens. Used for cost, because litellm does not know
 #                every model (Radium is missing). Omit to fall back to litellm.
-#   rate_group   models sharing a rate limit (Radium limits per organization).
-#   rpm          client-side requests/minute cap for the whole rate_group.
+#   rate_group     models sharing a rate limit (Radium limits per organization).
+#   rpm            client-side requests/minute cap for the whole rate_group.
+#   max_concurrent in-flight model calls for the whole rate_group (Anthropic rejects
+#                  this account above ~4 concurrent connections).
 #   retry        {max_tries, base}: Railtracks ExponentialRetry, delay ~ base**attempt.
 #
 # Prices verified 2026-11-24: Radium from radium.cloud/pricing, Claude from
@@ -59,16 +61,22 @@ models:
   # ------------------------------------------------- Claude (Radium's named comparables)
   anthropic/opus-4.7:
     provider: anthropic
+    rate_group: anthropic
+    max_concurrent: 3
     model_id: claude-opus-4-7
     pricing: {input: 5.00, output: 25.00, cached_input: 0.50}
     tags: [anthropic, frontier, radium-comparable]
   anthropic/sonnet-4.6:
     provider: anthropic
+    rate_group: anthropic
+    max_concurrent: 3
     model_id: claude-sonnet-4-6
     pricing: {input: 3.00, output: 15.00, cached_input: 0.30}
     tags: [anthropic, mid, radium-comparable]
   anthropic/haiku-4.5:
     provider: anthropic
+    rate_group: anthropic
+    max_concurrent: 3
     model_id: claude-haiku-4-5
     pricing: {input: 1.00, output: 5.00, cached_input: 0.10}
     tags: [anthropic, small, radium-comparable]
@@ -76,16 +84,22 @@ models:
   # ------------------------------------------------------------ Claude (current)
   anthropic/opus-5.5:
     provider: anthropic
+    rate_group: anthropic
+    max_concurrent: 3
     model_id: claude-opus-5-5
     pricing: {input: 4.00, output: 20.00, cached_input: 0.20}
     tags: [anthropic, frontier]
   anthropic/sonnet-5.5:
     provider: anthropic
+    rate_group: anthropic
+    max_concurrent: 3
     model_id: claude-sonnet-5-5
     pricing: {input: 2.00, output: 10.00, cached_input: 0.10}
     tags: [anthropic, mid]
   anthropic/haiku-5.5:
     provider: anthropic
+    rate_group: anthropic
+    max_concurrent: 3
     model_id: claude-haiku-5-5
     pricing: {input: 0.10, output: 0.50, cached_input: 0.01}
     tags: [anthropic, small]
@@ -109,12 +123,47 @@ models:
     provider: gemini
     model_id: gemini-3.8-flash
     tags: [gemini, mid]
-  xai/grok-4.7:
+  # xAI intentionally not configured: the available key is personal, not for benchmarking.
+
+  # ------------------------------------------- Reasoning benchmarks (AIME 2025)
+  # Radium's reasoning model vs one OpenAI and one Anthropic model (tag: aime-set).
+  # Same 32,768-token output budget for all (Hal's documented maximum); each at its
+  # strongest standard reasoning setting. Hal exposes no reasoning control: Radium
+  # accepts reasoning_effort but it made no difference in our probe.
+  radium/hal-32k:
     provider: openai_compatible
-    model_id: grok-4.7
-    api_base: https://api.x.ai/v1
-    api_key_env: XAI_API_KEY
-    tags: [xai, frontier]
+    model_id: hal-1.0
+    api_base: https://api.radium.cloud/v1
+    api_key_env: RADIUM_API_KEY
+    rate_group: radium
+    rpm: 600
+    params: {max_tokens: 32768}
+    pricing: {input: 2.00, output: 10.00, cached_input: 0.20}
+    tags: [aime-set, radium]
+  openai/gpt-5.5-high:
+    provider: openai
+    model_id: gpt-5.5
+    params: {max_tokens: 32768, reasoning_effort: high}
+    tags: [aime-set, openai]
+  anthropic/opus-4.6-high:
+    provider: anthropic
+    model_id: claude-opus-4-6
+    rate_group: anthropic
+    max_concurrent: 3
+    params: {max_tokens: 32768, reasoning_effort: high}
+    pricing: {input: 5.00, output: 25.00, cached_input: 0.50}
+    tags: [aime-set, anthropic]
+  # Dropped from the AIME set: in the pilot it answered I-01 and I-15 in ~1 s with
+  # no thinking and no \boxed{} (signs of recalling AIME 2025 answers).
+  anthropic/opus-4.7-high:
+    provider: anthropic
+    model_id: claude-opus-4-7
+    rate_group: anthropic
+    max_concurrent: 3
+    # litellm maps this to thinking={type: adaptive, display: summarized} + effort=high
+    params: {max_tokens: 32768, reasoning_effort: high}
+    pricing: {input: 5.00, output: 25.00, cached_input: 0.50}
+    tags: [anthropic]
 
   # -------------------------------------------------------------- Offline
   echo:

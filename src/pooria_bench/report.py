@@ -43,6 +43,7 @@ class Row:
     errors: int
     correct: int
     format_misses: int
+    no_reasoning: int
     accuracy: float | None
     ci_low: float | None
     ci_high: float | None
@@ -54,8 +55,14 @@ class Row:
     reasoning_tokens_per_sample: float
     output_tok_per_s: float | None
     truncated: int
+    refusals: int
     cost_usd: float | None
     cost_per_correct_usd: float | None
+
+
+def _format_ok(r: SampleResult) -> bool | None:
+    d = r.score_details
+    return d.get("format_ok", d.get("answer_line"))  # "answer_line": key used before 2026-11-24
 
 
 def aggregate(results: list[SampleResult], by_category: bool = False) -> list[Row]:
@@ -82,7 +89,8 @@ def aggregate(results: list[SampleResult], by_category: bool = False) -> list[Ro
                 n=n,
                 errors=sum(1 for r in rs if r.error),
                 correct=correct,
-                format_misses=sum(1 for r in scored if r.score_details.get("answer_line") is False),
+                format_misses=sum(1 for r in scored if _format_ok(r) is False),
+                no_reasoning=sum(1 for r in scored if r.reasoning_tokens == 0),
                 accuracy=correct / n if n else None,
                 ci_low=lo,
                 ci_high=hi,
@@ -94,6 +102,7 @@ def aggregate(results: list[SampleResult], by_category: bool = False) -> list[Ro
                 reasoning_tokens_per_sample=sum(r.reasoning_tokens for r in rs) / k,
                 output_tok_per_s=out_tok / call_time if call_time > 0 else None,
                 truncated=sum(1 for r in rs for f in r.finish_reasons if f == "length"),
+                refusals=sum(1 for r in rs for f in r.finish_reasons if f == "content_filter"),
                 cost_usd=cost,
                 cost_per_correct_usd=(cost / correct) if cost is not None and correct else None,
             )
@@ -112,6 +121,7 @@ COLUMNS = [
     ("err", lambda r: str(r.errors)),
     ("accuracy", lambda r: _fmt(r.accuracy and r.accuracy * 100, ".1f", "%")),
     ("no-fmt", lambda r: str(r.format_misses)),
+    ("no-think", lambda r: str(r.no_reasoning)),
     ("95% CI", lambda r: "-" if r.ci_low is None else f"{r.ci_low*100:.0f}-{r.ci_high*100:.0f}%"),
     ("p50 s", lambda r: _fmt(r.p50_latency_s)),
     ("p95 s", lambda r: _fmt(r.p95_latency_s)),
@@ -121,6 +131,7 @@ COLUMNS = [
     ("reason tok", lambda r: _fmt(r.reasoning_tokens_per_sample, ".0f")),
     ("out tok/s", lambda r: _fmt(r.output_tok_per_s, ".0f")),
     ("trunc", lambda r: str(r.truncated)),
+    ("refusals", lambda r: str(r.refusals)),
     ("cost $", lambda r: _fmt(r.cost_usd, ".4f")),
     ("$/correct", lambda r: _fmt(r.cost_per_correct_usd, ".5f")),
 ]
@@ -133,10 +144,12 @@ def to_markdown(rows: list[Row], title: str) -> str:
     lines += [
         "",
         "- accuracy excludes errored samples; `err` counts them. CI is a 95% Wilson interval.",
-        "- `no-fmt` counts answers without the required `Answer:` line (scored as-is, usually wrong).",
+        "- `no-think` counts answers produced with zero reasoning tokens (on hard problems, a sign of recall).",
+        "- `no-fmt` counts answers not in the requested format (`Answer:` line or `\\boxed{}`); scored best-effort.",
         "- latency is wall time per sample (whole agent loop, including tool calls and client-side queueing).",
         "- `out tok/s` = output tokens / summed model-call time, including time to first token (not a pure decode rate).",
-        "- `trunc` counts model calls that stopped with finish_reason=length.",
+        "- `trunc` counts model calls that stopped with finish_reason=length (output budget exhausted).",
+        "- `refusals` counts model calls that stopped with finish_reason=content_filter (e.g. Anthropic `refusal`).",
         "- cost uses configs/models.yaml pricing when set, otherwise litellm's estimate.",
     ]
     return "\n".join(lines) + "\n"

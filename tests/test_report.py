@@ -40,3 +40,12 @@ def test_aggregate_excludes_errors_from_accuracy_and_counts_truncation():
     assert a.cost_usd == pytest.approx(0.03)
     assert a.cost_per_correct_usd == pytest.approx(0.03)
     assert a.output_tok_per_s == pytest.approx(30 / 1.5)
+
+
+def test_aggregate_counts_refusals_and_format_misses():
+    r1 = _r("a", "1", False, finish="content_filter")
+    r2 = _r("a", "2", True)
+    r1.score_details = {"format_ok": False}
+    r2.score_details = {"answer_line": False}  # legacy key still understood
+    (row,) = aggregate([r1, r2])
+    assert row.refusals == 1 and row.format_misses == 2

@@ -8,6 +8,7 @@ Flow built for its model; usage comes from the recording model middleware.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 import platform
 import subprocess
@@ -39,6 +40,21 @@ class RunConfig:
     retry_errors: bool = True  # on resume, re-run samples that errored
     save_transcripts: bool = True
     overrides: dict[str, Any] = field(default_factory=dict)  # extra rt.llm params for every model
+    sample_ids: list[str] | None = None  # run only these sample ids
+    categories: list[str] | None = None  # run only samples whose metadata category is listed
+
+
+def select_samples(task: Task, cfg: RunConfig) -> list[Sample]:
+    samples = task.load(cfg.limit if not (cfg.sample_ids or cfg.categories) else None)
+    if cfg.sample_ids:
+        wanted = set(cfg.sample_ids)
+        unknown = wanted - {s.id for s in samples}
+        if unknown:
+            raise KeyError(f"Unknown sample ids for {task.name}: {sorted(unknown)}")
+        samples = [s for s in samples if s.id in wanted]
+    if cfg.categories:
+        samples = [s for s in samples if s.metadata.get("category") in set(cfg.categories)]
+    return samples[: cfg.limit] if cfg.limit else samples
 
 
 def _git_sha() -> str | None:
@@ -94,6 +110,33 @@ def _summarize(spec: ModelSpec, trace: SampleTrace) -> dict[str, Any]:
     )
 
 
+class _Transcript(BaseModel):
+    model: str
+    sample_id: str
+    repeat: int
+    histories: list[dict[str, Any]]
+
+
+def _write_samples(path: Path, samples: list[Sample]) -> None:
+    """Samples as run, merged with any already saved (resumes may add samples)."""
+    existing: dict[str, str] = {}
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                existing[json.loads(line)["id"]] = line
+    for smp in samples:
+        existing[smp.id] = smp.model_dump_json()
+    path.write_text("".join(line + "\n" for line in existing.values()), encoding="utf-8")
+
+
+def _message_dict(m: Any) -> dict[str, Any]:
+    out = {"role": getattr(m.role, "value", str(m.role)), "content": str(m.content)}
+    reasoning = getattr(m, "reasoning_content", None)
+    if reasoning:
+        out["reasoning"] = reasoning
+    return out
+
+
 def _transcript(conn: rt.FlowConnection) -> list[dict[str, Any]]:
     out = []
     try:
@@ -101,7 +144,7 @@ def _transcript(conn: rt.FlowConnection) -> list[dict[str, Any]]:
             out.append(
                 {
                     "node": hist.node_name,
-                    "messages": [{"role": str(m.role), "content": str(m.content)} for m in hist.message_history],
+                    "messages": [_message_dict(m) for m in hist.message_history],
                 }
             )
     except Exception as exc:  # transcripts are best-effort debugging aid
@@ -115,7 +158,14 @@ async def run_benchmark(
     cfg: RunConfig,
     on_result: Callable[[SampleResult], None] | None = None,
 ) -> Path:
-    samples = task.load(cfg.limit)
+    samples = select_samples(task, cfg)
+    # Railtracks runs every model call synchronously in a worker thread (asyncio.to_thread),
+    # so the default executor's size silently caps concurrency, and time spent waiting for
+    # a free thread would be counted as model latency. Size it for the planned load.
+    workers = max(32, 2 * cfg.concurrency * len(specs) + 8)
+    asyncio.get_running_loop().set_default_executor(
+        concurrent.futures.ThreadPoolExecutor(max_workers=workers, thread_name_prefix="pb-call")
+    )
     run_dir = cfg.run_dir or cfg.out_dir / f"{datetime.now():%Y%m%d-%H%M%S}_{task.name}"
     run_dir.mkdir(parents=True, exist_ok=True)
     run_id = run_dir.name
@@ -144,13 +194,17 @@ async def run_benchmark(
         old.setdefault("resumed", []).append(manifest)
         manifest = old
     manifest_path.write_text(json.dumps(manifest, indent=2, default=str))
+    _write_samples(run_dir / "samples.jsonl", samples)
 
     writer = ResultWriter(results_path)
     transcript_writer = ResultWriter(transcripts_path) if cfg.save_transcripts else None
     limiters: dict[str, RateLimiter] = {}
+    slots: dict[str, asyncio.Semaphore] = {}
     for s in specs:
         if s.rpm and s.group not in limiters:
             limiters[s.group] = RateLimiter(s.rpm)
+        if s.max_concurrent and s.group not in slots:
+            slots[s.group] = asyncio.Semaphore(s.max_concurrent)
     semaphores = {s.name: asyncio.Semaphore(cfg.concurrency) for s in specs}
     flows = {
         s.name: rt.Flow(
@@ -163,7 +217,7 @@ async def run_benchmark(
 
     async def run_one(spec: ModelSpec, sample: Sample, repeat: int) -> None:
         async with semaphores[spec.name]:
-            trace = SampleTrace(limiter=limiters.get(spec.group))
+            trace = SampleTrace(limiter=limiters.get(spec.group), slots=slots.get(spec.group))
             token = CURRENT_TRACE.set(trace)
             started = datetime.now(timezone.utc).isoformat()
             output = error = score = None
@@ -175,7 +229,15 @@ async def run_benchmark(
                 output = task.extract_output(result)
                 score = task.score(sample, output)
             except Exception as exc:
-                error = describe_error(exc)
+                last = trace.calls[-1] if trace.calls else None
+                if last is not None and last.error is None and last.finish_reason in ("length", "content_filter"):
+                    # The model call itself succeeded but left no usable text (output budget
+                    # exhausted, or a provider content filter). Railtracks raises for that, but
+                    # it is a model failure: score it as wrong instead of dropping it as an error.
+                    score = task.score(sample, None)
+                    score.details["empty_output"] = last.finish_reason
+                else:
+                    error = describe_error(exc)
             finally:
                 latency = time.perf_counter() - t0
                 CURRENT_TRACE.reset(token)
@@ -219,16 +281,8 @@ async def run_benchmark(
     return run_dir
 
 
-
-class _Transcript(BaseModel):
-    model: str
-    sample_id: str
-    repeat: int
-    histories: list[dict[str, Any]]
-
-
 def count_pending(task: Task, specs: list[ModelSpec], cfg: RunConfig) -> int:
-    samples = task.load(cfg.limit)
+    samples = select_samples(task, cfg)
     done: set[tuple[str, str, int]] = set()
     if cfg.run_dir is not None:
         done = {
@@ -243,7 +297,6 @@ def count_pending(task: Task, specs: list[ModelSpec], cfg: RunConfig) -> int:
         for spec in specs
         if (spec.name, s.id, rep) not in done
     )
-
 
 
 def rescore_run(run_dir: Path, task: Task) -> int:

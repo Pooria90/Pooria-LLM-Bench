@@ -49,6 +49,7 @@ class ModelSpec(BaseModel):
     pricing: Pricing | None = None
     rate_group: str | None = None
     rpm: float | None = None
+    max_concurrent: int | None = None  # in-flight model calls for the whole rate_group
     retry: RetrySpec | None = None
     tags: list[str] = Field(default_factory=list)
 

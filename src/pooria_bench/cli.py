@@ -98,6 +98,8 @@ def run(
     out: Path = typer.Option(Path("runs"), "--out", help="Parent directory for new runs."),
     resume: Optional[Path] = typer.Option(None, "--resume", help="Existing run dir to continue."),
     param: list[str] = typer.Option([], "--param", "-p", help="Extra LLM param for every model, key=json_value."),
+    only: list[str] = typer.Option([], "--only", help="Run only these sample ids (repeatable or comma-separated)."),
+    category: list[str] = typer.Option([], "--category", help="Run only samples in this metadata category."),
     config: Optional[Path] = ConfigOpt,
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
 ) -> None:
@@ -114,8 +116,10 @@ def run(
             overrides[k] = json.loads(v)
         except json.JSONDecodeError:
             overrides[k] = v
+    ids = [i.strip() for chunk in only for i in chunk.split(",") if i.strip()]
     cfg = RunConfig(limit=limit, repeats=repeats, concurrency=concurrency, timeout_s=timeout,
-                    out_dir=out, run_dir=resume, overrides=overrides)
+                    out_dir=out, run_dir=resume, overrides=overrides,
+                    sample_ids=ids or None, categories=category or None)
 
     pending = count_pending(t, specs, cfg)
     console.print(f"[bold]{t.name}[/bold]: {pending} sample runs pending across {len(specs)} model(s): "

@@ -17,13 +17,37 @@ uv run pooria-bench tasks
 uv run pooria-bench ping -m tag:radium         # one call per model, prints usage
 uv run pooria-bench run smoke-qa -m tag:radium -m tag:radium-comparable
 uv run pooria-bench report runs/<run-dir> --by-category
+uv run python dashboard/serve.py               # browse results at http://127.0.0.1:8765
 uv run pytest
 ```
+
+## AIME 2025
+
+```bash
+uv run pooria-bench run aime2025 -m tag:aime-set --timeout 1800 -c 5
+```
+
+- **Problems:** all 30 AIME 2025 problems (`data/aime2025.jsonl`, see `data/README.md`). The six
+  figures are given as TikZ, Asymptote or LaTeX text, and those problems are tagged
+  `category=figure` (`report --by-category` splits them out).
+- **Models (`aime-set`):**
+  - Radium Hal (`radium/hal-32k`)
+  - GPT-5.5 at `reasoning_effort=high` (`openai/gpt-5.5-high`)
+  - Claude Opus 4.6 at `reasoning_effort=high` (`anthropic/opus-4.6-high`)
+- **Output budget:** 32,768 tokens for all three, Hal's documented maximum.
+- **Prompt:** MathArena's: the problem, then "reason step by step… `\boxed{}`… an integer between 0
+  and 999", with no system prompt.
+- **Scoring:** the last `\boxed{}` integer. A reply that is only an integer is accepted but flagged as
+  a format miss.
+- **Running out of budget** counts as wrong (column `trunc`, ✂ in the dashboard).
+- **Memorization check:** `no-think` counts answers produced with zero reasoning tokens. Opus 4.7 was
+  dropped from the set because it answered hard problems instantly with no reasoning.
 
 `-m` takes model names from `configs/models.yaml` or `tag:<tag>`. Useful `run` flags:
 `--limit N`, `--repeats R`, `--concurrency C` (per model), `--timeout S` (per sample),
 `--param key=value` (extra LLM params for every model, e.g. `-p reasoning_effort='"low"'`),
-and `--resume runs/<dir>`, which skips finished samples and retries errored ones.
+`--only I-01,II-15` / `--category figure` (pick samples), and `--resume runs/<dir>`, which skips
+finished samples and retries errored ones.
 After changing a scorer, run `rescore runs/<dir>` to re-score saved outputs without any model calls.
 
 ## Layout
@@ -39,12 +63,18 @@ src/pooria_bench/
   report.py                accuracy + Wilson CI, p50/p95 latency, tokens, cost/correct
   scorers.py               exact / numeric / multiple-choice matching
   tasks/                   one module per task
+dashboard/                 standalone results browser (reads run folders only; see dashboard/README.md)
+data/, scripts/            datasets and the scripts that build them
 tests/                     offline tests (scripted Railtracks model, no network)
 notes/                     research notes (Radium, Railtracks assessment)
 ```
 
-Each run writes `manifest.json` (models, config, versions, git sha), `results.jsonl`
-(one line per model x sample x repeat, with per-call usage) and `transcripts.jsonl`.
+Each run writes these files:
+
+- `manifest.json`: models, config, versions, git sha
+- `samples.jsonl`: the samples as run
+- `results.jsonl`: one line per model × sample × repeat, with per-call usage
+- `transcripts.jsonl`: the messages, including any reasoning the provider returned
 
 ## Adding a task
 
