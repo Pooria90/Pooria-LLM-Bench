@@ -139,6 +139,10 @@ def test_samples_file_and_sample_selection(tmp_path, monkeypatch, scripted_spec)
     assert saved[1]["metadata"]["figure"] == "tikz" and "tikzpicture" in saved[1]["input"]
     results = {r.sample_id: r for r in latest_results(run_dir / "results.jsonl")}
     assert results["I-01"].correct and not results["II-03"].correct
+    # a resume that adds an earlier sample keeps dataset order in samples.jsonl
+    asyncio.run(run_benchmark(task, [scripted_spec], RunConfig(run_dir=run_dir, sample_ids=["I-01", "I-02", "II-03"])))
+    order = [json.loads(line)["id"] for line in (run_dir / "samples.jsonl").read_text().splitlines()]
+    assert order == ["I-01", "I-02", "II-03"]
     with pytest.raises(KeyError):
         runner_mod.select_samples(task, RunConfig(sample_ids=["nope"]))
     assert {s.id for s in runner_mod.select_samples(task, RunConfig(categories=["figure"]))} == {

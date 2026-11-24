@@ -118,15 +118,13 @@ class _Transcript(BaseModel):
 
 
 def _write_samples(path: Path, samples: list[Sample]) -> None:
-    """Samples as run, merged with any already saved (resumes may add samples)."""
-    existing: dict[str, str] = {}
+    """Samples as run, in task order, plus any saved by earlier invocations of this run."""
+    merged: dict[str, str] = {smp.id: smp.model_dump_json() for smp in samples}
     if path.exists():
         for line in path.read_text(encoding="utf-8").splitlines():
             if line.strip():
-                existing[json.loads(line)["id"]] = line
-    for smp in samples:
-        existing[smp.id] = smp.model_dump_json()
-    path.write_text("".join(line + "\n" for line in existing.values()), encoding="utf-8")
+                merged.setdefault(json.loads(line)["id"], line)
+    path.write_text("".join(line + "\n" for line in merged.values()), encoding="utf-8")
 
 
 def _message_dict(m: Any) -> dict[str, Any]:
